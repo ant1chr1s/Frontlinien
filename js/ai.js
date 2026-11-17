@@ -47,7 +47,7 @@ class AI {
       }
     }
     // ---- Reparieren ----
-    if (p.credits > 1500) for (const b of blds) if (!b.rep && b.hp < b.def.hp * 0.6 && g.time - b.lastHit > 6) g.command(pid, { c: 'repair', id: b.id });
+    if (p.credits > 1500) for (const b of blds) if (!b.rep && b.hp < maxHp(b) * 0.6 && g.time - b.lastHit > 6) g.command(pid, { c: 'repair', id: b.id });
     // ---- Bau-Fahrzeug, falls Bauhof verloren ----
     if (!bh) {
       const mcv = units.find(u => u.def.mcv);
@@ -191,7 +191,7 @@ class AI {
     const g = this.g; let best = null, bd = 1e12;
     const foeId = this.foe ? this.foe.id : -1;
     for (const e of g.ents.values()) {
-      if (e.kind !== 'bld' || g.allied(this.pid, e.owner)) continue;
+      if (e.kind !== 'bld' || g.allied(this.pid, e.owner) || e.def.role === 'wall' || e.def.role === 'gate') continue;
       let d = Math.hypot(e.x - x, e.y - y);
       if (e.owner !== foeId) d *= 1.6;
       if (d < bd) { bd = d; best = e; }

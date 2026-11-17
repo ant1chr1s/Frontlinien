@@ -137,7 +137,7 @@ const CAMPAIGN = {
 for (const f in CAMPAIGN) CAMPAIGN[f].forEach((mi, i) => { mi.fac = f; mi.idx = i; });
 
 // ---------- Missionsaufbau ----------
-const TECH = { 1: ['power', 'refinery', 'barracks', 'factory', 'tower', 'bauhof'], 2: ['power', 'refinery', 'barracks', 'factory', 'tower', 'bauhof', 'airfield', 'tech', 'intel', 'special'] };
+const TECH = { 1: ['power', 'refinery', 'barracks', 'factory', 'tower', 'bauhof', 'wall', 'gate'], 2: ['power', 'refinery', 'barracks', 'factory', 'tower', 'bauhof', 'wall', 'gate', 'airfield', 'tech', 'intel', 'special'] };
 function missionAllowed(g, pid, d) {
   const M = g.mission; if (!M || !M.tech || M.tech >= 3 || pid !== 0) return true;
   const ok = TECH[M.tech];

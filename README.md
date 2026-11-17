@@ -6,6 +6,7 @@ Ein Command-&-Conquer-artiges Strategiespiel in 3D (2D umschaltbar) für den Bro
 - **Kampagne:** 3 × 15 Missionen mit Story (Allianz „Operation Morgenrot“, Dominion „Eiserner Sturm“, Kollektiv „Das Erwachen“). Fortschritt wird im Browser gespeichert.
 - **Kartennebel** (im Gefecht abschaltbar) und Aufklärung: Satellitenzentrale (Allianz), Spionageflugzeug (Dominion), Späherdrohne (Kollektiv).
 - **Ingenieure** erobern feindliche Gebäude.
+- **Mauern & Tore:** Mauerpfeiler verbinden sich automatisch bis 6 Felder; Tore öffnen sich nur für eigene Einheiten; Türme in der Mauer sind stärker.
 - **Zwischensequenzen:** 15 animierte Story-Sequenzen (Intro, Wendepunkte, Finale je Fraktion) – live mit Sprecherstimme oder als MP4-Video (`assets/videos`).
 - **Musik & Ansager:** Synth-Musik im 90er-Stil, Ansagen mit Akzent je Fraktion (Lautstärke im Hauptmenü und im Spielmenü).
 

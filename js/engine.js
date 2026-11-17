@@ -18,6 +18,7 @@ class Game {
     this.map = setup.mapData ? decodeMap(setup.mapData) : buildMap(setup.map);
     const m = this.map; this.W = m.w; this.H = m.h;
     this.blk = new Int32Array(m.w * m.h);
+    this.gateOf = new Int16Array(m.w * m.h).fill(-1); this._pp = -1;
     this.ents = new Map(); this.nextId = 1; this.time = 0; this.tick = 0;
     this.events = []; this.netEvents = []; this.net = false; this.resChanged = new Set();
     this.projs = []; this.timed = []; this.storms = []; this.pathQ = [];
@@ -55,7 +56,11 @@ class Game {
   // ---------- Hilfen ----------
   idx(x, y) { return y * this.W + x; }
   tileOf(px) { return Math.floor(px / T); }
-  passable(i) { const t = this.map.ter[i]; return (t === TER.LOW || t === TER.HILL || t === TER.SHALLOW) && this.blk[i] === 0; }
+  passable(i) {
+    const t = this.map.ter[i]; if (t !== TER.LOW && t !== TER.HILL && t !== TER.SHALLOW) return false;
+    if (this.blk[i] === 0) return true;
+    const go = this.gateOf[i]; return go >= 0 && this._pp >= 0 && (go === this._pp || this.allied(this._pp, go)); // Tore: nur für eigene/verbündete Einheiten
+  }
   passXY(x, y) { return x >= 0 && y >= 0 && x < this.W && y < this.H && this.passable(y * this.W + x); }
   emit(ev) { this.events.push(ev); if (this.net) this.netEvents.push(ev); }
   msg(txt, p = -1, col) { this.emit({ k: 'msg', p, txt, col }); }
@@ -98,6 +103,15 @@ class Game {
     this.recalcPower(p);
     this.bgridDirty = true;
     return e;
+  }
+  removeBld(b) { // ohne Explosion entfernen (z. B. Mauerstück wird zum Tor)
+    for (let y = b.ty; y < b.ty + b.h; y++) for (let x = b.tx; x < b.tx + b.w; x++) if (this.blk[this.idx(x, y)] === b.id) this.blk[this.idx(x, y)] = 0;
+    this.ents.delete(b.id); this.bgridDirty = true;
+  }
+  relinkWalls() {
+    this.wallDirty = false; this.gateOf.fill(-1);
+    const occ = wallOcc(this);
+    for (const e of this.ents.values()) if (isWallish(e)) { e.wm = wallMaskOf(this, occ, e); if (e.def.role === 'gate') this.gateOf[this.idx(e.tx, e.ty)] = e.owner; }
   }
   dockTile(b) {
     const cand = [[b.tx + 1, b.ty + b.h], [b.tx, b.ty + b.h], [b.tx + 2, b.ty + b.h], [b.tx + b.w, b.ty + 1], [b.tx - 1, b.ty + 1], [b.tx + 1, b.ty - 1]];
@@ -198,6 +212,16 @@ class Game {
   cmdPlace(pid, qn, tx, ty) {
     const p = this.P(pid), q = p.q[qn]; if (!q || !q[0] || q[0].st !== 'ready') return false;
     const d = DEFS[q[0].type];
+    const plan = wallPlan(this, pid, d, tx, ty);
+    if (plan) {
+      if (!plan.ok) { this.msg(plan.why, pid); return false; }
+      q.shift();
+      for (const r of plan.rep) this.removeBld(r);
+      plan.tiles.forEach(([x, y], i) => { const e = this.placeBuilding(pid, d, x, y, i > 0); if (plan.inWall) { e.inWall = true; e.hp = maxHp(e); } });
+      this.relinkWalls();
+      this.emit({ k: 'place', x: (tx + 0.5) * T, y: (ty + 0.5) * T, w: 1 });
+      return true;
+    }
     if (!this.canPlace(pid, d, tx, ty)) return false;
     q.shift();
     this.placeBuilding(pid, d, tx, ty);
@@ -308,7 +332,7 @@ class Game {
     if (w.min && d < w.min * T) return false;
     return d <= this.rangeOf(e);
   }
-  acquire(e, extra) {
+  acquire(e, extra, noWalls) {
     const w = e.def.weapon; if (!w) return 0;
     const R = this.rangeOf(e) + (extra || 0);
     let best = 0, bs = 1e9;
@@ -318,11 +342,12 @@ class Game {
       const ci = cy * this.cw + cx;
       for (const arr of [this.grid[ci], this.bgrid[ci]]) for (const o of arr) {
         if (o.hp <= 0 || !this.canHit(e, o)) continue;
+        if (noWalls && o.kind === 'bld' && (o.def.role === 'wall' || o.def.role === 'gate')) continue;
         const d = this.dist(e, o) - this.rad(o);
         if (d > R) continue;
         if (w.min && d < w.min * T) continue;
         let s = d;
-        if (o.kind === 'bld') s += o.def.weapon ? T : 4 * T;
+        if (o.kind === 'bld') s += o.def.weapon ? T : (o.def.role === 'wall' || o.def.role === 'gate') ? 6 * T : 4 * T;
         else if (o.def.weapon) s -= T;
         if (s < bs) { bs = s; best = o.id; }
       }
@@ -371,6 +396,7 @@ class Game {
     let m = WCLS[c] ? WCLS[c][t.def.armor] : 1;
     if (t.kind === 'bld') { for (const s of this.P(t.owner).mods.shields) if (Math.hypot(s.x - t.x, s.y - t.y) < s.r) { m *= s.mult; break; } t.lastHit = this.time; t.hitBy = by; }
     else { t.lastHit = this.time; t.hitBy = by; }
+    if (t.inWall) m *= INWALL_ARMOR;
     t.hp -= amt * m;
     if (t.kind === 'bld' && by != null && by >= 0 && !this.allied(by, t.owner)) { const o = this.P(t.owner); if (!(o.lastAtt > this.time - 20)) { o.lastAtt = this.time; this.emit({ k: 'att', p: t.owner, x: t.x | 0, y: t.y | 0 }); } }
     if (t.hp <= 0) this.kill(t, by);
@@ -382,6 +408,7 @@ class Game {
     if (t.kind === 'bld') {
       for (let y = t.ty; y < t.ty + t.h; y++) for (let x = t.tx; x < t.tx + t.w; x++) if (this.blk[this.idx(x, y)] === t.id) this.blk[this.idx(x, y)] = 0;
       this.recalcPower(this.P(t.owner)); this.calcMods(this.P(t.owner)); this.bgridDirty = true;
+      if (isWallish(t)) this.wallDirty = true;
     }
     if (!quiet) this.emit({ k: 'd', o: t.owner, u: t.kind === 'unit' && !t.wave ? 1 : 0, x: t.x | 0, y: t.y | 0, r: (t.kind === 'bld' ? Math.max(t.w, t.h) * T / 2 : t.def.size) | 0, b: t.kind === 'bld' ? 1 : 0, a: t.air ? 1 : 0 });
     this.P(t.owner).stats.lost++;
@@ -389,7 +416,7 @@ class Game {
   }
   sell(b) {
     const p = this.P(b.owner);
-    const refund = Math.round((b.def.cost || 2500) * 0.5 * b.hp / b.def.hp);
+    const refund = Math.round((b.def.cost || 2500) * 0.5 * b.hp / maxHp(b));
     p.credits += refund;
     this.emit({ k: 'sell', x: b.x | 0, y: b.y | 0, p: b.owner, v: refund });
     this.kill(b, null, true);
@@ -480,19 +507,22 @@ class Game {
       p.credits += p.mods.income * dt;
       this.production(p, dt);
     }
+    if (this.wallDirty) this.relinkWalls();
     // Wege
     let budget = 30;
     while (this.pathQ.length && budget-- > 0) {
       const u = this.ents.get(this.pathQ.shift()); if (!u) continue; u.inQ = false;
       if (!u.need) continue;
+      this._pp = u.owner;
       const pth = this.findPath(this.tileOf(u.x), this.tileOf(u.y), this.tileOf(u.need.x), this.tileOf(u.need.y));
+      this._pp = -1;
       u.path = pth || []; u.pi = 0; u.need = null; u.stuckT = 0; u.lp = { x: u.x, y: u.y };
     }
     // Einheiten
     for (const e of this.ents.values()) {
-      if (e.kind === 'unit') this.updUnit(e, dt); else this.updBld(e, dt);
+      if (e.kind === 'unit') { this._pp = e.owner; this.updUnit(e, dt); this._pp = -1; } else this.updBld(e, dt);
     }
-    this.separate();
+    this.separate(); this._pp = -1;
     // Projektile
     for (let i = this.projs.length - 1; i >= 0; i--) { const pr = this.projs[i]; pr.t -= dt; if (pr.t <= 0) { this.projs.splice(i, 1); this.impact(pr); } }
     // Zeiteffekte
@@ -505,7 +535,7 @@ class Game {
     if (this.mission) { missionTick(this, dt); if (slow) missionCheck(this); }
     else if (slow) this.checkVictory();
     const tm = this.time;
-    for (const e of this.ents.values()) e.flags = (e.stun > tm ? 1 : 0) | (e.inv > tm ? 2 : 0) | (e.rep ? 4 : 0) | (e.carry > 0 ? 8 : 0) | (e.hs === 'mine' ? 16 : 0) | (e.def.weapon && e.cool > e.def.weapon.rof - 0.4 ? 32 : 0);
+    for (const e of this.ents.values()) e.flags = (e.stun > tm ? 1 : 0) | (e.inv > tm ? 2 : 0) | (e.rep ? 4 : 0) | (e.carry > 0 ? 8 : 0) | (e.hs === 'mine' ? 16 : 0) | (e.def.weapon && e.cool > e.def.weapon.rof - 0.4 ? 32 : 0) | (e.open ? 64 : 0) | (e.inWall ? 128 : 0) | ((e.wm | 0) << 8);
   }
   production(p, dt) {
     for (const qn of QUEUES) {
@@ -547,11 +577,17 @@ class Game {
   }
 
   updBld(b, dt) {
-    const d = b.def;
-    if (b.rep && b.hp < d.hp) {
-      const p = this.P(b.owner), heal = d.hp * 0.05 * dt, cost = heal / d.hp * (d.cost || 2500) * 0.35;
-      if (p.credits >= cost) { p.credits -= cost; b.hp = Math.min(d.hp, b.hp + heal); } else b.rep = false;
-      if (b.hp >= d.hp) b.rep = false;
+    const d = b.def, mh = maxHp(b);
+    if (b.rep && b.hp < mh) {
+      const p = this.P(b.owner), heal = mh * 0.05 * dt, cost = heal / mh * (d.cost || 2500) * 0.35;
+      if (p.credits >= cost) { p.credits -= cost; b.hp = Math.min(mh, b.hp + heal); } else b.rep = false;
+      if (b.hp >= mh) b.rep = false;
+    }
+    if (d.role === 'gate' && (this.tick + b.id) % 4 === 0) {
+      let open = false; const R = T * 1.8, ci = Math.min(this.ch - 1, (b.y / CELL) | 0), cj = Math.min(this.cw - 1, (b.x / CELL) | 0);
+      for (let cy = Math.max(0, ci - 1); cy <= Math.min(this.ch - 1, ci + 1) && !open; cy++) for (let cx = Math.max(0, cj - 1); cx <= Math.min(this.cw - 1, cj + 1) && !open; cx++)
+        for (const u of this.grid[cy * this.cw + cx]) if (!u.air && Math.abs(u.x - b.x) < R && Math.abs(u.y - b.y) < R && this.allied(u.owner, b.owner)) { open = true; break; }
+      b.open = open;
     }
     if (d.sw && b.swt > 0 && !(b.stun > this.time) && !this.P(b.owner).low) b.swt = Math.max(0, b.swt - dt);
     if (d.eff && d.eff.repair && this.tick % 4 === 0) {
@@ -577,7 +613,7 @@ class Game {
       const o = u.order;
       if (o && o.t === 'capture') {
         const t = this.ents.get(o.id);
-        if (!t || this.allied(u.owner, t.owner)) { u.order = null; u.path = null; return; }
+        if (!t || this.allied(u.owner, t.owner) || t.def.role === 'wall' || t.def.role === 'gate') { u.order = null; u.path = null; return; }
         if (this.dist(u, t) - this.rad(t) < T * 0.9) { this.capture(t, u); return; }
         if (!u.need && (!u.path || this.tick - (u.ptk || 0) > 40)) { u.ptk = this.tick; this.reqPath(u, t.x, t.y); }
         this.moveAlong(u, dt); return;
@@ -594,7 +630,7 @@ class Game {
     // Ziel suchen
     if (!t && !passive && d.weapon) {
       u.acq -= dt;
-      if (u.acq <= 0) { u.acq = 0.5; const id = this.acquire(u, o ? T * 1.5 : T * 2.5); if (id) { u.tgt = id; t = this.ents.get(id); } }
+      if (u.acq <= 0) { u.acq = 0.5; const id = this.acquire(u, o ? T * 1.5 : T * 2.5, !!(o && o.am)); if (id) { u.tgt = id; t = this.ents.get(id); } }
     }
     if (t && !explicit && !passive) {
       // Leine: Idle-Einheiten nicht zu weit jagen lassen
@@ -609,11 +645,23 @@ class Game {
         return;
       } else {
         if (u.air) { this.flyTo(u, t.x, t.y, dt); return; }
+        if (u.path && u.pi >= u.path.length && !u.need) {
+          u.blockT = (u.blockT || 0) + dt;
+          if (u.blockT > 1.2) { u.blockT = 0; const wl = this.blockingWall(u); if (wl && wl !== t) { u.order = { t: 'move', x: t.x, y: t.y, am: true }; u.tgt = wl.id; return; } }
+        } else u.blockT = 0;
         if (!u.path || u.need === null && (this.tick - (u.ptk || 0)) > 30) {
           if (!u.need && (!u.path || (this.tick - (u.ptk || 0)) > 30)) { u.ptk = this.tick; this.reqPath(u, t.x, t.y); }
         }
         this.moveAlong(u, dt);
         return;
+      }
+    }
+    // Durch Mauer versperrt? Dann die Mauer angreifen
+    if (!u.air && d.weapon && o && (o.t === 'attack' || (o.t === 'move' && o.am)) && u.path && u.pi >= u.path.length && !u.need) {
+      const gx = o.t === 'attack' && t ? t.x : o.x, gy = o.t === 'attack' && t ? t.y : o.y;
+      if (gx !== undefined && Math.hypot(gx - u.x, gy - u.y) > 3 * T) {
+        const wl = this.blockingWall(u);
+        if (wl) { u.order = { t: 'move', x: gx, y: gy, am: true }; u.tgt = wl.id; return; }
       }
     }
     // Bewegen
@@ -623,6 +671,11 @@ class Game {
       this.moveAlong(u, dt);
     } else if (o && o.t === 'return') { if (u.air ? this.flyTo(u, o.x, o.y, dt) : (u.path && u.pi >= u.path.length && !u.need)) u.order = null; else if (!u.air) this.moveAlong(u, dt); }
     else if (!o && u.air) { u.face += dt * 0.3; }
+  }
+  blockingWall(u) {
+    let best = null, bd = 5 * T;
+    for (const e of this.ents.values()) if (e.kind === 'bld' && isWallish(e) && !this.allied(u.owner, e.owner) && this.canHit(u, e)) { const dd = this.dist(u, e); if (dd < bd) { bd = dd; best = e; } }
+    return best;
   }
   updSpy(u, dt) {
     const o = u.order; if (!o) { this.kill(u, null, true); return; }
@@ -695,7 +748,7 @@ class Game {
     }
   }
   nudge(u, dx, dy) {
-    const nx = u.x + dx, ny = u.y + dy;
+    const nx = u.x + dx, ny = u.y + dy; this._pp = u.owner;
     if (u.air) { u.x = Math.max(2, Math.min(this.W * T - 2, nx)); u.y = Math.max(2, Math.min(this.H * T - 2, ny)); return; }
     if (this.passXY(this.tileOf(nx), this.tileOf(ny))) { u.x = nx; u.y = ny; }
   }

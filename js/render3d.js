@@ -229,17 +229,18 @@ class Renderer3D {
     }
     for (const t of [1, 2, 3]) { const im = this.resMesh[t]; im.count = cnt[t]; im.instanceMatrix.needsUpdate = true; }
   }
-  model(type, color) {
-    const k = type + color; let md = this.models.get(k);
-    if (!md) { const d = DEFS[type], team = new THREE.Color(color).getHex(); md = d.kind === 'bld' ? modelBld(d, team) : modelUnit(d, team); this.models.set(k, md); }
+  model(type, color, wk) {
+    const k = type + color + (wk || ''); let md = this.models.get(k);
+    if (!md) { const d = DEFS[type], team = new THREE.Color(color).getHex(), fl = wk ? +wk : 0; md = d.kind === 'bld' ? modelBld(d, team, fl ? { mask: fl >> 8 & 15, open: fl & 64, inWall: fl & 128 } : undefined) : modelUnit(d, team); this.models.set(k, md); }
     return md;
   }
+  wallKey(e) { if (e.kind !== 'bld') return ''; const r = e.def.role, f = e.flags | 0; if (r === 'wall' || r === 'gate' || (f & 128)) return String((f & (15 << 8)) | (r === 'gate' ? f & 64 : 0) | (f & 128) | 1); return ''; }
   makeObj(e) {
     const col = this.w.players[e.owner].color;
     if (this.assets.has(e.type)) { const o = this.makeAssetObj(e, col); if (o) return o; }
-    const md = this.model(e.type, col), g = new THREE.Group();
+    const wk = this.wallKey(e), md = this.model(e.type, col, wk), g = new THREE.Group();
     const add = (geo, mat, name) => { const m = new THREE.Mesh(geo, mat); m.castShadow = this.shadows && mat !== this.matGlow; m.receiveShadow = e.kind === 'bld' && this.shadows; m.name = name; g.add(m); return m; };
-    const o = { g: null, tur: null, rot: null, type: e.type, owner: e.owner, kind: e.kind, walk: Math.random() * 6, move: 0 };
+    const o = { wk, g: null, tur: null, rot: null, type: e.type, owner: e.owner, kind: e.kind, walk: Math.random() * 6, move: 0 };
     if (md.main) { const mm = add(md.main, this.matLit, 'main'); if (e.kind === 'unit' && e.def.cat === 'inf') mm.onBeforeRender = () => this.setAnim(o.walk, o.move); else mm.onBeforeRender = this.noAnim; }
     if (md.glow) add(md.glow, this.matGlow, 'glow');
     let tur = null, rot = null;
@@ -272,7 +273,7 @@ class Renderer3D {
     return o;
   }
   addProps(e, g, col) {
-    if (!this.assets.ready || e.def.role === 'tower' || e.def.role === 'superweapon') return;
+    if (!this.assets.ready || e.def.role === 'tower' || e.def.role === 'superweapon' || e.def.role === 'wall' || e.def.role === 'gate') return;
     const set = PROP_SETS[e.def.fac]; if (!set) return;
     const r = mulberry32(e.id * 977 + 13), W = e.def.w * T, D = e.def.h * T;
     const corners = [[-1, 1], [1, 1], [-1, -1], [1, -1]].sort(() => r() - 0.5);
@@ -465,7 +466,7 @@ class Renderer3D {
     for (const e of w.ents.values()) {
       seen.add(e.id);
       let o = this.objs.get(e.id);
-      if (!o || o.type !== e.type || o.owner !== e.owner) { if (o) this.root.remove(o.g); o = this.makeObj(e); this.objs.set(e.id, o); }
+      if (!o || o.type !== e.type || o.owner !== e.owner || (e.kind === 'bld' && (o.wk || '') !== this.wallKey(e))) { if (o) this.root.remove(o.g); o = this.makeObj(e); this.objs.set(e.id, o); }
       const x = e.kind === 'unit' ? e.px + (e.x - e.px) * alpha : e.x, y = e.kind === 'unit' ? e.py + (e.y - e.py) * alpha : e.y;
       const vis = x > cam.x - pad && x < cam.x + vw + pad && y > cam.y - pad && y < cam.y + vh + pad * 2 && (!fog || fog.canSee(e));
       o.g.visible = vis; if (!vis) continue;
@@ -506,7 +507,7 @@ class Renderer3D {
       const gp = o.g.position, md = o.md;
       if (e.kind === 'bld' && fog && !fog.allied(e.owner) && !fog.visAt(e.x, e.y)) continue;
       if (e.kind === 'bld') {
-        const hpF = e.hp / e.def.hp, Wb = e.w * T, Hb = e.h * T;
+        const hpF = e.hp / maxHp(e), Wb = e.w * T, Hb = e.h * T;
         if (hpF < 0.55 && Rn() < dt * 7 * mobK) this.pSmoke.emit(gp.x + (Rn() - 0.5) * Wb * 0.6, gp.y + 22 + Rn() * 14, gp.z + (Rn() - 0.5) * Hb * 0.6, (Rn() - 0.5) * 6, 22 + Rn() * 14, (Rn() - 0.5) * 6, 2.5 + Rn() * 1.5, 8, 30, hpF < 0.3 ? [0.12, 0.11, 0.1, 0.7] : [0.3, 0.29, 0.27, 0.55], [0.35, 0.34, 0.32, 0], -3, 0.4);
         if (hpF < 0.3 && Rn() < dt * 14 * mobK) this.pFire.emit(gp.x + (Rn() - 0.5) * Wb * 0.5, gp.y + 10 + Rn() * 12, gp.z + (Rn() - 0.5) * Hb * 0.5, 0, 18 + Rn() * 14, 0, 0.5 + Rn() * 0.4, 9, 16, [1, 0.8, 0.3, 0.95], [1, 0.25, 0.02, 0], -12, 1);
         if (md.smoke && !(e.flags & 1)) for (const sp of md.smoke) if (Rn() < dt * 2.5 * mobK) this.pSmoke.emit(gp.x + sp[0], gp.y + sp[1], gp.z + sp[2], 4 + Rn() * 3, 16 + Rn() * 8, -2 + Rn() * 3, 3 + Rn(), sp[3] * 1.1, sp[3] * 4, [0.55, 0.54, 0.52, 0.35], [0.7, 0.7, 0.7, 0], -2, 0.3);
@@ -556,7 +557,7 @@ class Renderer3D {
       const tx0 = Math.max(0, Math.floor(cam.x / T)), ty0 = Math.max(0, Math.floor(cam.y / T)), tx1 = Math.min(w.map.w, Math.ceil((cam.x + vw) / T)), ty1 = Math.min(w.map.h, Math.ceil((cam.y + vh) / T));
       c.strokeStyle = 'rgba(255,255,255,0.08)'; c.lineWidth = 1 / z; c.beginPath();
       for (let x = tx0; x <= tx1; x++) { c.moveTo(x * T, ty0 * T); c.lineTo(x * T, ty1 * T); } for (let y = ty0; y <= ty1; y++) { c.moveTo(tx0 * T, y * T); c.lineTo(tx1 * T, y * T); } c.stroke();
-      if (ui.ghost) { const d = DEFS[ui.placing.type], g = ui.ghost, ok = ui.ghostOk; c.fillStyle = ok ? 'rgba(118,255,3,0.22)' : 'rgba(255,23,68,0.35)'; c.fillRect(g.tx * T, g.ty * T, d.w * T, d.h * T); c.strokeStyle = ok ? '#76ff03' : '#ff1744'; c.lineWidth = 2 / z; c.strokeRect(g.tx * T, g.ty * T, d.w * T, d.h * T); if (d.weapon) { c.strokeStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.arc((g.tx + 0.5) * T, (g.ty + 0.5) * T, d.weapon.rng * T, 0, 7); c.stroke(); } }
+      if (ui.ghost) { const d = DEFS[ui.placing.type], g = ui.ghost, ok = ui.ghostOk; if (ui.ghostTiles) { c.fillStyle = 'rgba(118,255,3,0.3)'; for (const [x, y] of ui.ghostTiles) c.fillRect(x * T + 3, y * T + 3, T - 6, T - 6); } c.fillStyle = ok ? 'rgba(118,255,3,0.22)' : 'rgba(255,23,68,0.35)'; c.fillRect(g.tx * T, g.ty * T, d.w * T, d.h * T); c.strokeStyle = ok ? '#76ff03' : '#ff1744'; c.lineWidth = 2 / z; c.strokeRect(g.tx * T, g.ty * T, d.w * T, d.h * T); if (d.weapon) { c.strokeStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.arc((g.tx + 0.5) * T, (g.ty + 0.5) * T, d.weapon.rng * T, 0, 7); c.stroke(); } }
     }
     // Auswahlringe (am Boden, leicht nach oben verschoben für Höhe)
     for (const id of sel) {
@@ -581,18 +582,18 @@ class Renderer3D {
     for (const e of w.ents.values()) {
       if (!inView(e, 60)) continue;
       if (fogO && !fogO.canSee(e)) continue;
-      const s = sel.has(e.id), dmg = e.hp < e.def.hp, fl = e.flags | 0;
+      const s = sel.has(e.id), dmg = e.hp < maxHp(e), fl = e.flags | 0;
       const x = e.kind === 'unit' ? e.px + (e.x - e.px) * alpha : e.x, y = e.kind === 'unit' ? e.py + (e.y - e.py) * alpha : e.y;
       if (e.kind === 'bld') {
         const top = 40 + (e.def.role === 'superweapon' ? 30 : 0);
         const [sx, sy] = this.toScreen(e.tx * T + 4, e.ty * T, hOf(x, y) + top, cam);
-        if (s || (dmg && ui.showHp)) this.bar(c, sx, sy, (e.w * T - 8) * z, e.hp / e.def.hp);
+        if (s || (dmg && ui.showHp)) this.bar(c, sx, sy, (e.w * T - 8) * z, e.hp / maxHp(e));
         if (fl & 4) { c.fillStyle = '#69f0ae'; c.font = 'bold 14px sans-serif'; c.textAlign = 'center'; const [mx, my] = this.toScreen(x, y, hOf(x, y) + 50, cam); c.fillText('🔧', mx, my); }
         if (e.def.role === 'superweapon' && e.owner === ui.pid && ui.swReady && ui.swReady.has(e.id)) { const [mx, my] = this.toScreen(x, y, hOf(x, y) + 80, cam); c.fillStyle = `rgba(255,23,68,${0.6 + 0.4 * Math.sin(now * 6)})`; c.font = 'bold 13px sans-serif'; c.textAlign = 'center'; c.fillText('BEREIT', mx, my); }
       } else {
         const h = hOf(x, y) + (e.air ? AIR_H : 0) + e.def.size * 1.6 + 10;
         const [sx, sy] = this.toScreen(x, y, h, cam), bw = Math.max(16, e.def.size * 2.2) * Math.max(0.7, z);
-        if (s || (dmg && ui.showHp)) this.bar(c, sx - bw / 2, sy, bw, e.hp / e.def.hp, e.def.harvester && s ? (fl & 8 ? 1 : 0) : -1);
+        if (s || (dmg && ui.showHp)) this.bar(c, sx - bw / 2, sy, bw, e.hp / maxHp(e), e.def.harvester && s ? (fl & 8 ? 1 : 0) : -1);
       }
       if (fl & 3) { const [sx, sy] = this.toScreen(x, y, hOf(x, y) + (e.air ? AIR_H : 0) + 6, cam); const r = (e.kind === 'bld' ? e.w * T * 0.6 : e.def.size * 1.6) * z; c.strokeStyle = fl & 2 ? `rgba(255,215,0,${0.6 + 0.3 * Math.sin(now * 5)})` : 'rgba(64,196,255,0.85)'; c.lineWidth = 2.5; c.beginPath(); c.ellipse(sx, sy, r, r * 0.75, 0, 0, 7); c.stroke(); }
     }

@@ -101,7 +101,38 @@ function bug(b, o) {
 }
 
 // ---------- Gebäude ----------
+function wallParts(b, fac, mask, mode, open) {
+  // mode: 'wall' | 'gate' | 'tower' (Mauerstücke unter einem Turm)
+  const tex = fac === 'K' ? 'organic' : 'concrete', col = fac === 'A' ? 0xc4c9c6 : fac === 'D' ? 0x707276 : 0x6a3d7a, H = mode === 'tower' ? 16 : 22, th = fac === 'D' ? 11 : 10;
+  const dirs = [[1, 0, -1], [2, 1, 0], [4, 0, 1], [8, -1, 0]];
+  for (const [bit, dx, dz] of dirs) {
+    if (!(mask & bit)) continue;
+    const w = dx ? 17 : th, dd = dz ? 17 : th, x = dx * 8, z = dz * 8;
+    if (fac === 'K') { b.T('organic', 'organic', 14); b.sph(1, x, H * 0.45, z, col, w / 2 + 1, H * 0.55, dd / 2 + 1, 10); }
+    else { b.T(tex, tex, 16); b.box(w, H, dd, x, H / 2, z, col); b.T('paint'); b.box(dx ? w : th + 1, 1.6, dz ? dd : th + 1, x, H - 1, z, fac === 'D' ? 0x3a3a3a : 0x9ea4a1);
+      if (fac === 'D') { b.T('hazard', 'hazard', 8); b.box(dx ? w : th + 0.4, 2, dz ? dd : th + 0.4, x, 4, z, 0xffffff); b.T('paint'); }
+      if (fac === 'A') b.box(dx ? w : th + 0.6, 1.4, dz ? dd : th + 0.6, x, H * 0.55, z, 'team'); }
+  }
+  if (mode === 'tower') { b.T(tex, tex, 16); if (fac === 'K') b.sph(1, 0, 6, 0, col, 15, 9, 15, 12); else b.box(28, 10, 28, 0, 5, 0, col); b.T('paint'); return; }
+  if (mode === 'gate') {
+    const hor = (mask & 10) || !(mask & 5);
+    for (const sgn of [-1, 1]) { const x = hor ? sgn * 13 : 0, z = hor ? 0 : sgn * 13;
+      if (fac === 'K') { b.T('organic', 'organic', 10); b.cone(5, 30, x, 15, z, col, 7); } else { b.T(tex, tex, 12); b.box(7, 30, 14, x, 15, z, col, hor ? 0 : Math.PI / 2); b.T('paint'); b.box(7.4, 2, 14.4, x, 26, z, 'team', hor ? 0 : Math.PI / 2); }
+      b.grp = 'glow'; b.sph(1.4, x, 31, z, open ? 0x76ff03 : 0xff1744); b.grp = 'main'; }
+    const dy = open ? -7 : 10, dc = fac === 'K' ? 0xb388ff : fac === 'D' ? 0x6d5a4a : 0x90a4ae;
+    b.T(fac === 'K' ? 'organic' : 'shutter', fac === 'K' ? 'organic' : 'shutter', 10); b.box(hor ? 20 : 4, 18, hor ? 4 : 20, 0, dy, 0, dc);
+    b.T('paint'); b.box(hor ? 20.4 : 4.4, 2.5, hor ? 4.4 : 20.4, 0, dy + 4, 0, 'team');
+    b.T('concrete', 'concrete', 12); b.box(hor ? 32 : 16, 1.2, hor ? 16 : 32, 0, 0.6, 0, 0x5a5a5a);
+    return;
+  }
+  // Pfeiler (nur an Enden und Ecken)
+  if (mask === 5 || mask === 10) return;
+  if (fac === 'K') { b.T('organic', 'organic', 12); b.sph(1, 0, 10, 0, col, 9, 13, 9, 12); b.cone(4, 14, 0, 26, 0, 'light', 7); b.grp = 'glow'; b.sph(2, 0, 18, 6, 'team'); b.grp = 'main'; }
+  else { b.T(tex, tex, 12); b.box(15, 28, 15, 0, 14, 0, col); b.T('paint'); b.box(16, 2.4, 16, 0, 22, 0, 'team'); b.box(17, 2, 17, 0, 28.5, 0, fac === 'D' ? 0x3a3a3a : 0xe0e4e2);
+    if (fac === 'D') for (const [x, z] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) b.cone(1.6, 5, x, 32, z, 0x444444, 5); }
+}
 function modelBld(d, team, opts) {
+  if (d.role === 'wall' || d.role === 'gate') { const b = new MB(team, d.fac); wallParts(b, d.fac, (opts && opts.mask) | 0, d.role, opts && opts.open); return b.build(); }
   const b = new MB(team, d.fac), st = d.fac, W = d.w * T - 4, D = d.h * T - 4, s = Math.min(W, D), k = d.key.slice(2);
   const rnd = mulberry32(d.idx * 131 + 7);
   const y0 = 6;
@@ -163,6 +194,7 @@ function modelBld(d, team, opts) {
       else { b.T('organic', 'organic', 10); b.sph(17, 0, y0 + 17, 0, 0x9c4dcc, 1, 0.9, 1, 16); glowOrb(5, 0, y0 + 34, 0); b.cyl(4, 7, 14, 0, y0 + 4, 0, 'light', 10); for (let i = 0; i < 3; i++) spike(2, 14, Math.cos(i * 2.1) * 14, y0 + 20, Math.sin(i * 2.1) * 14, i * 2.1, 0.7); }
       break;
     case 'tower': {
+      if (opts && opts.inWall) wallParts(b, st, opts.mask | 0, 'tower');
       if (st === 'A') { b.T('panel', 'paint', 12); b.cyl(12, 14, 14, 0, 7, 0, 0xcfd8dc, 16); b.T('paint'); b.cyl(14.3, 14.3, 1.5, 0, 3, 0, 'team', 16); }
       else if (st === 'D') { b.T('concrete', 'concrete', 12); b.box(28, 16, 28, 0, 6, 0, 0x8c8c82); b.T('hazard', 'hazard', 8); b.box(28.4, 2, 28.4, 0, 12, 0, 0xffffff); for (const [x, z] of [[-10, -10], [10, -10], [-10, 10], [10, 10]]) { b.T('camo', null, 8); b.box(6, 4, 6, x, 16, z, 0x9a8a60); } }
       else { pod(14, 0, 4, 0, 'light', 0.7); for (let i = 0; i < 4; i++) spike(2, 10, Math.cos(i * 1.57) * 11, 2, Math.sin(i * 1.57) * 11, i * 1.57, 0.6); }

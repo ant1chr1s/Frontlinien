@@ -71,6 +71,19 @@ tower('D', 'flak', 'Flakgeschütz', { c: 'flak', dmg: 45, rng: 8, rof: 0.55, air
 tower('K', 'stachel', 'Stachelturm', { c: 'psi', dmg: 22, rng: 6, rof: 0.45, gnd: true }, 800, 500, ['barracks'], -10, 'Gegen Infanterie');
 tower('K', 'saeure', 'Säurekanone', { c: 'acid', dmg: 100, rng: 6, rof: 1.6, gnd: true }, 1000, 900, ['factory'], -25, 'Gegen Fahrzeuge');
 tower('K', 'sporen', 'Sporenwerfer', { c: 'flak', dmg: 50, rng: 8.5, rof: 0.75, air: true, gnd: false }, 700, 700, ['refinery'], -20, 'Gegen Luft');
+// Mauern & Tore: 1. Block = Mauerpfeiler, der nächste verbindet bis zu 6 Felder zum vorhandenen Pfeiler
+const WALL_NAMES = { A: ['Betonmauer', 'Schleusentor'], D: ['Stahlmauer', 'Panzertor'], K: ['Chitinwall', 'Membrantor'] };
+for (const f of 'ADK') {
+  def(f + '_mauer', { kind: 'bld', fac: f, role: 'wall', name: WALL_NAMES[f][0], w: 1, h: 1, hp: f === 'D' ? 1100 : f === 'K' ? 800 : 950, cost: 100, time: 3, pow: 0, req: ['bauhof'], q: 'def', noSight: true,
+    desc: 'Mauerpfeiler. Ein weiterer Pfeiler bis 6 Felder entfernt (gleiche Reihe/Spalte) wird automatisch verbunden. Türme können in die Mauer gebaut werden.' });
+  def(f + '_tor', { kind: 'bld', fac: f, role: 'gate', name: WALL_NAMES[f][1], w: 1, h: 1, hp: f === 'D' ? 1800 : f === 'K' ? 1300 : 1500, cost: 300, time: 6, pow: 0, req: ['wall'], q: 'def', noSight: true,
+    desc: 'Wird in eine eigene Mauer gebaut. Öffnet sich für eigene und verbündete Einheiten.' });
+}
+const WALL_TILE = 6;      // max. Verbindungslänge
+const INWALL_HP = 1.75;   // Türme in der Mauer: mehr Leben
+const INWALL_ARMOR = 0.7; // … und nehmen weniger Schaden
+function isWallish(e) { return e && e.kind === 'bld' && (e.def.role === 'wall' || e.def.role === 'gate' || (e.def.role === 'tower' && (e.inWall || ((e.flags | 0) & 128)))); }
+function maxHp(e) { return e.kind === 'bld' && (e.inWall || ((e.flags | 0) & 128)) ? Math.round(e.def.hp * INWALL_HP) : e.def.hp; }
 
 // ---------- Spezialgebäude (4 je Fraktion) ----------
 function special(f, key, name, cost, eff, desc) {

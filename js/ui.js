@@ -11,7 +11,7 @@ function uiHasReq(world, pid, req) {
   for (const e of world.ents.values()) if (e.kind === 'bld' && e.owner === pid) { roles.add(e.def.role); types.add(e.type); }
   return req.filter(r => !roles.has(r) && !types.has(r));
 }
-function reqName(fac, r) { const d = DEFS[r] || DEFS[fac + '_' + r]; return d ? d.name : r; }
+function reqName(fac, r) { const d = DEFS[r] || DEFS[fac + '_' + r] || (r === 'wall' ? DEFS[fac + '_mauer'] : null); return d ? d.name : r; }
 function uiCanBuild(world, pid, view, d) {
   if (d.role === 'superweapon' && !world.swEnabled) return 'Superwaffen sind deaktiviert';
   const fac = world.players[pid].fac;
@@ -209,7 +209,7 @@ class HUD {
       if (IS_TOUCH && !inGhost) { this.setGhost(w); return; }
       if (!IS_TOUCH) this.setGhost(w);
       if (ui.ghostOk) { this.cmd({ c: 'place', q: ui.placing.q, tx: ui.ghost.tx, ty: ui.ghost.ty }); ui.placing = null; ui.ghost = null; this.cmdKey = ''; }
-      else toast('Hier kann nicht gebaut werden – nahe an eigenen Gebäuden, auf freiem Land.');
+      else toast(ui.ghostWhy || 'Hier kann nicht gebaut werden – nahe an eigenen Gebäuden, auf freiem Land.');
       return;
     }
     const hit = this.pick(w), mine = this.ownSelUnits();
@@ -272,7 +272,9 @@ class HUD {
     const tx = Math.floor(w.x / T - d.w / 2 + 0.5), ty = Math.floor(w.y / T - d.h / 2 + 0.5);
     if (ui.ghost && ui.ghost.tx === tx && ui.ghost.ty === ty && this._gT > performance.now() - 300) return;
     ui.ghost = { tx, ty }; this._gT = performance.now();
-    ui.ghostOk = uiCanPlace(this.world, this.pid, d, tx, ty);
+    const plan = wallPlan(this.world, this.pid, d, tx, ty);
+    if (plan) { ui.ghostOk = plan.ok; ui.ghostTiles = plan.ok ? plan.tiles : null; ui.ghostWhy = plan.why || ''; ui.ghostWall = !!plan.inWall || d.role !== 'tower'; }
+    else { ui.ghostOk = uiCanPlace(this.world, this.pid, d, tx, ty); ui.ghostTiles = null; ui.ghostWhy = ''; ui.ghostWall = false; }
   }
   cancelModes() { this.ui.placing = null; this.ui.ghost = null; this.ui.swTarget = null; this.amove = false; this.cmdKey = ''; }
 
@@ -367,7 +369,7 @@ class HUD {
     if (this.sel.size) {
       const cnt = {}; for (const id of this.sel) { const e = this.world.ents.get(id); if (e) cnt[e.def.name] = (cnt[e.def.name] || 0) + 1; }
       info = Object.entries(cnt).map(([n, c]) => (c > 1 ? c + '× ' : '') + n).join(', ');
-      if (this.sel.size === 1) { const e = this.world.ents.get([...this.sel][0]); if (e) info += ` (${Math.ceil(e.hp)}/${e.def.hp})` + (e.owner !== this.pid ? ' – ' + this.world.players[e.owner].name : ''); }
+      if (this.sel.size === 1) { const e = this.world.ents.get([...this.sel][0]); if (e) info += ` (${Math.ceil(e.hp)}/${maxHp(e)})` + (e.kind === 'bld' && (e.flags & 128) ? ' 🧱 in Mauer' : '') + (e.owner !== this.pid ? ' – ' + this.world.players[e.owner].name : ''); }
     }
     $('#selinfo').textContent = info;
     if (key === this.cmdKey) return; this.cmdKey = key;

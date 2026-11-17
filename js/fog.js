@@ -3,6 +3,7 @@
 function sightOf(e) {
   const d = e.def;
   if (d.sight) return d.sight;
+  if (d.role === 'wall' || d.role === 'gate') return 2.5;
   if (e.kind === 'bld') return d.role === 'bauhof' ? 10 : d.weapon ? d.weapon.rng + 1.5 : 6;
   return Math.max(5, (d.weapon ? d.weapon.rng : 3) + 2) + (d.cat === 'air' ? 2 : 0);
 }

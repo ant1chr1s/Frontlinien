@@ -79,7 +79,30 @@ function resSprite(type, lvl) {
 }
 
 // ---------- Gebäude ----------
+function drawWall(c, d, col, x, y, flags, armsOnly) {
+  const m = (flags | 0) >> 8 & 15, cx = x + T / 2, cy = y + T / 2, f = d.fac, th = 14;
+  const base = f === 'A' ? '#b5bcbf' : f === 'D' ? '#55585a' : '#5b3a6b', top = f === 'A' ? '#dfe5e8' : f === 'D' ? '#7a7d80' : '#8e5aa6', edge = f === 'A' ? '#7d8589' : f === 'D' ? '#2c2e30' : '#331d3d';
+  const arm = (dx, dy, cl, w) => { c.fillStyle = cl; if (dx) c.fillRect(dx > 0 ? cx : x, cy - w / 2, T / 2, w); else c.fillRect(cx - w / 2, dy > 0 ? cy : y, w, T / 2); };
+  c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(cx - 9 + 3, cy - 9 + 4, 18, 18);
+  for (const [bit, dx, dy] of [[1, 0, -1], [2, 1, 0], [4, 0, 1], [8, -1, 0]]) if (m & bit) { arm(dx, dy, edge, th + 2); arm(dx, dy, base, th - 2); arm(dx, dy, top, 4); }
+  if (d.role === 'gate') {
+    const hor = (m & 10) || !(m & 5), op = (flags | 0) & 64;
+    c.fillStyle = edge; if (hor) c.fillRect(x, cy - 9, T, 18); else c.fillRect(cx - 9, y, 18, T);
+    if (!op) { c.fillStyle = f === 'K' ? '#b388ff' : f === 'D' ? '#8d6e63' : '#90a4ae'; if (hor) c.fillRect(x + 2, cy - 6, T - 4, 12); else c.fillRect(cx - 6, y + 2, 12, T - 4); c.fillStyle = col; if (hor) c.fillRect(x + 4, cy - 2, T - 8, 4); else c.fillRect(cx - 2, y + 4, 4, T - 8); }
+    else { c.fillStyle = '#222'; if (hor) c.fillRect(x + 3, cy - 6, T - 6, 12); else c.fillRect(cx - 6, y + 3, 12, T - 6); }
+    c.fillStyle = base; if (hor) { c.fillRect(x - 1, cy - 10, 6, 20); c.fillRect(x + T - 5, cy - 10, 6, 20); } else { c.fillRect(cx - 10, y - 1, 20, 6); c.fillRect(cx - 10, y + T - 5, 20, 6); }
+    return;
+  }
+  if (armsOnly) { c.fillStyle = edge; c.fillRect(cx - 13, cy - 13, 26, 26); c.fillStyle = base; c.fillRect(cx - 11, cy - 11, 22, 22); return; }
+  if (m === 5 || m === 10) { c.fillStyle = col; if (m === 5) c.fillRect(cx - 1, y + 4, 2, T - 8); else c.fillRect(x + 4, cy - 1, T - 8, 2); return; }
+  c.fillStyle = edge; if (f === 'K') { c.beginPath(); c.arc(cx, cy, 10, 0, 7); c.fill(); } else c.fillRect(cx - 9, cy - 9, 18, 18);
+  c.fillStyle = base; if (f === 'K') { c.beginPath(); c.arc(cx, cy, 8, 0, 7); c.fill(); } else c.fillRect(cx - 7, cy - 7, 14, 14);
+  c.fillStyle = col; c.fillRect(cx - 4, cy - 4, 8, 8);
+}
 function drawBld(c, d, col, x, y, tm, face, hp, flags) {
+  const F = flags && typeof flags === 'object' ? flags.raw | 0 : flags | 0;
+  if (d.role === 'wall' || d.role === 'gate') { drawWall(c, d, col, x, y, F); return; }
+  if (F & 128) drawWall(c, d, col, x, y, F, true);
   const W = d.w * T, H = d.h * T, cx = x + W / 2, cy = y + H / 2, s = Math.min(W, H), st = d.fac;
   const dk = shade(col, -0.45), lt = shade(col, 0.35);
   // Schatten
@@ -433,8 +456,8 @@ class Renderer {
     const seen = (e) => !fog || fog.canSee(e);
     // Gebäude
     for (const e of ents) if (e.kind === 'bld' && inView(e, 120) && seen(e)) {
-      const fl = { inv: e.flags & 2, stun: e.flags & 1, rep: e.flags & 4, ready: e.def.role === 'superweapon' && e.owner === ui.pid && ui.swReady && ui.swReady.has(e.id) };
-      drawBld(c, e.def, P[e.owner].color, e.tx * T, e.ty * T, now2 + e.id, e.face, e.hp / e.def.hp, fl);
+      const fl = { raw: e.flags | 0, inv: e.flags & 2, stun: e.flags & 1, rep: e.flags & 4, ready: e.def.role === 'superweapon' && e.owner === ui.pid && ui.swReady && ui.swReady.has(e.id) };
+      drawBld(c, e.def, P[e.owner].color, e.tx * T, e.ty * T, now2 + e.id, e.face, e.hp / maxHp(e), fl);
     }
     // Bodeneinheiten
     const sel = ui.sel;
@@ -457,13 +480,13 @@ class Renderer {
     // Lebensbalken
     for (const e of ents) {
       if (!seen(e)) continue;
-      const s = sel.has(e.id), dmg = e.hp < e.def.hp;
+      const s = sel.has(e.id), dmg = e.hp < maxHp(e);
       if (!s && !(dmg && ui.showHp)) continue;
       if (!inView(e, 60)) continue;
       let x, y, bw;
       if (e.kind === 'bld') { x = e.tx * T + 4; y = e.ty * T - 6; bw = e.w * T - 8; }
       else { const ex = e.px + (e.x - e.px) * alpha, ey = e.py + (e.y - e.py) * alpha - (e.air ? 22 : 0); bw = Math.max(16, e.def.size * 2); x = ex - bw / 2; y = ey - e.def.size - 8; }
-      const f = Math.max(0, e.hp / e.def.hp);
+      const f = Math.max(0, e.hp / maxHp(e));
       c.fillStyle = 'rgba(0,0,0,0.7)'; c.fillRect(x - 1, y - 1, bw + 2, 5);
       c.fillStyle = f > 0.6 ? '#76ff03' : f > 0.3 ? '#ffd600' : '#ff1744'; c.fillRect(x, y, bw * f, 3);
       if (e.def.harvester && s && e.carry !== undefined) { c.fillStyle = '#ffd54f'; c.fillRect(x, y + 4, bw * Math.min(1, (e.carry || 0) / HARV_CAP), 2); }
@@ -475,6 +498,7 @@ class Renderer {
     // Platzierung
     if (ui.placing && ui.ghost) {
       const d = DEFS[ui.placing.type], g = ui.ghost, ok = ui.ghostOk;
+      if (ui.ghostTiles && ui.ghostTiles.length > 1) { c.globalAlpha = 0.55; for (const [x, y] of ui.ghostTiles.slice(1)) { drawWall(c, d, P[ui.pid].color, x * T, y * T, 0); c.fillStyle = 'rgba(118,255,3,0.25)'; c.fillRect(x * T, y * T, T, T); } c.globalAlpha = 1; }
       c.globalAlpha = 0.55; drawBld(c, d, P[ui.pid].color, g.tx * T, g.ty * T, now2, 0.5, 1, null); c.globalAlpha = 1;
       c.fillStyle = ok ? 'rgba(118,255,3,0.25)' : 'rgba(255,23,68,0.35)'; c.fillRect(g.tx * T, g.ty * T, d.w * T, d.h * T);
       c.strokeStyle = ok ? '#76ff03' : '#ff1744'; c.lineWidth = 2; c.strokeRect(g.tx * T, g.ty * T, d.w * T, d.h * T);
