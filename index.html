@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b0f0b">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Frontlinien – Echtzeit-Strategie</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl" class="hidden"></canvas>
+  <canvas id="cv"></canvas>
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div id="credits">$ 0</div>
+      <div id="power" title="Energie: Produktion / Verbrauch"><span>⚡</span><div id="powbar"><div id="powfill"></div><div id="powuse"></div></div><span id="powtxt"></span></div>
+      <div id="swbar"></div>
+      <button id="menuBtn" title="Menü">☰</button>
+    </div>
+    <div id="msgs"></div>
+    <div id="missionBox" class="hidden"></div>
+    <div id="cmdbar"></div>
+    <div id="selinfo"></div>
+    <div id="side">
+      <canvas id="mini" width="200" height="150"></canvas>
+      <div id="tabs">
+        <button data-q="bld" title="Gebäude">🏗<small>Bau</small></button>
+        <button data-q="def" title="Verteidigung">🗼<small>Abwehr</small></button>
+        <button data-q="inf" title="Infanterie">🪖<small>Infant.</small></button>
+        <button data-q="veh" title="Fahrzeuge">🚜<small>Fahrz.</small></button>
+        <button data-q="air" title="Luftwaffe">✈<small>Luft</small></button>
+      </div>
+      <div id="grid"></div>
+      <div id="info"></div>
+    </div>
+  </div>
+
+  <!-- Hauptmenü -->
+  <div id="mainMenu" class="screen">
+    <div class="panel menu">
+      <h1>FRONTLINIEN</h1>
+      <div class="sub">Echtzeit-Strategie · 3 Fraktionen · bis zu 10 Spieler</div>
+      <label class="row">Dein Name <input id="nameIn" maxlength="16" value="Kommandant"></label>
+      <label class="row">Grafik <select id="gfxSel"><option value="3d">3D</option><option value="2d">2D (schneller, für ältere Handys)</option></select></label>
+      <div class="vols"><label>🎵 Musik <input type="range" min="0" max="1" step="0.05" data-vol="music"></label><label>🗣 Stimme <input type="range" min="0" max="1" step="0.05" data-vol="voice"></label><label>💥 Effekte <input type="range" min="0" max="1" step="0.05" data-vol="sfx"></label></div>
+      <button class="big" id="btnCampaign">🎖 Kampagne</button>
+      <button class="big" id="btnLocal">⚔ Gefecht gegen CPU</button>
+      <button class="big" id="btnHost">🌐 Online-Spiel erstellen</button>
+      <button class="big" id="btnJoin">🔗 Online beitreten</button>
+      <button class="big ghost" id="btnHelp">📖 Anleitung &amp; Fraktionen</button>
+      <div class="foot" id="installHint"></div>
+      <div class="foot" id="assetStatus"></div>
+    </div>
+  </div>
+
+  <!-- Kampagne -->
+  <div id="campaignScreen" class="screen hidden">
+    <div class="panel wide campaign">
+      <h2>Kampagne</h2>
+      <p id="campIntro" class="small-txt"></p>
+      <div id="campTabs"></div>
+      <div class="lobby">
+        <div class="col"><div id="campFacTxt" class="small-txt"></div><div id="campList"></div></div>
+        <div class="col grow"><div id="campBrief"></div></div>
+      </div>
+      <div class="btnrow"><button class="ghost" data-back>← Zurück</button>
+        <label>Schwierigkeit <select id="campDiff"><option value="-1">Leicht</option><option value="0" selected>Normal</option><option value="1">Schwer</option></select></label>
+        <button class="big" id="btnCampStart">▶ Mission starten</button></div>
+    </div>
+  </div>
+
+  <!-- Beitreten -->
+  <div id="joinScreen" class="screen hidden">
+    <div class="panel menu">
+      <h2>Online beitreten</h2>
+      <p>Gib den Raum-Code deines Freundes ein:</p>
+      <input id="codeIn" class="code" maxlength="5" placeholder="ABCDE" autocomplete="off" autocapitalize="characters">
+      <button class="big" id="btnDoJoin">Beitreten</button>
+      <div id="joinStatus" class="status"></div>
+      <button class="ghost" data-back>← Zurück</button>
+    </div>
+  </div>
+
+  <!-- Lobby / Spiel einrichten -->
+  <div id="setup" class="screen hidden">
+    <div class="panel wide">
+      <div class="lobbyHead">
+        <h2 id="setupTitle">Gefecht einrichten</h2>
+        <div id="roomBox" class="hidden">Raum-Code: <b id="roomCode">…</b> <button id="copyLink" class="small">Link kopieren</button><div id="roomLink" class="small-txt"></div></div>
+      </div>
+      <div class="lobby">
+        <div class="col">
+          <label>Karte <select id="mapSel"></select></label>
+          <div id="mapDesc" class="small-txt"></div>
+          <div id="randOpts" class="hidden">
+            <label>Spieler <select id="rPlayers"></select></label>
+            <label>Wasser <select id="rWater"><option value="0">wenig</option><option value="1" selected>mittel</option><option value="2">viel</option></select></label>
+            <label>Berge/Hügel <select id="rMount"><option value="0">wenig</option><option value="1" selected>mittel</option><option value="2">viel</option></select></label>
+            <label>Seed <input id="rSeed" type="number" style="width:90px"> <button id="rDice" class="small">🎲 Neu</button></label>
+          </div>
+          <canvas id="preview" width="220" height="220"></canvas>
+          <label class="chk"><input type="checkbox" id="optSW" checked> Superwaffen erlaubt</label>
+          <label class="chk"><input type="checkbox" id="optFog" checked> Kartennebel (Karte muss erkundet werden)</label>
+          <label>Startkapital <select id="optCredits"><option value="5000">5.000</option><option value="10000" selected>10.000</option><option value="20000">20.000</option><option value="50000">50.000</option></select></label>
+          <label id="speedRow">Spieltempo <select id="optSpeed"><option value="0.75">Langsam</option><option value="1" selected>Normal</option><option value="1.35">Schnell</option><option value="1.75">Sehr schnell</option></select></label>
+        </div>
+        <div class="col grow">
+          <table id="slots"><thead><tr><th>#</th><th>Spieler</th><th>Fraktion</th><th>Team</th><th>Farbe</th></tr></thead><tbody></tbody></table>
+          <div id="facInfo" class="small-txt"></div>
+        </div>
+      </div>
+      <div class="btnrow"><button class="ghost" id="setupBack">← Zurück</button><button class="big" id="btnStart">▶ Spiel starten</button></div>
+      <div id="lobbyStatus" class="status"></div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pauseScreen" class="screen hidden">
+    <div class="panel menu">
+      <h2>Menü</h2>
+      <button class="big" id="btnResume">▶ Weiterspielen</button>
+      <label class="row">Grafik <select id="gfxSel2"><option value="3d">3D</option><option value="2d">2D (schneller)</option></select></label>
+      <label class="chk" id="shadowRow"><input type="checkbox" id="optShadow"> Echte Schatten (3D, braucht mehr Leistung)</label>
+      <label class="chk"><input type="checkbox" id="optHp" checked> Lebensbalken bei Schaden zeigen</label>
+      <label class="chk"><input type="checkbox" id="optEdge" checked> Rand-Scrollen mit Maus</label>
+      <div class="vols"><label>🎵 Musik <input type="range" min="0" max="1" step="0.05" data-vol="music"></label><label>🗣 Stimme <input type="range" min="0" max="1" step="0.05" data-vol="voice"></label><label>💥 Effekte <input type="range" min="0" max="1" step="0.05" data-vol="sfx"></label></div>
+      <button class="big ghost" id="btnHelp2">📖 Anleitung</button>
+      <button class="big ghost" id="btnSurrender">🏳 Aufgeben</button>
+      <button class="big ghost" id="btnQuit">⏏ Zum Hauptmenü</button>
+    </div>
+  </div>
+
+  <!-- Ende -->
+  <div id="endScreen" class="screen hidden">
+    <div class="panel menu">
+      <h1 id="endTitle">SIEG</h1>
+      <div id="endStats"></div>
+      <button class="big hidden" id="btnNextMission">▶ Nächste Mission</button>
+      <button class="big hidden" id="btnRetry">↻ Nochmal versuchen</button>
+      <button class="big" id="btnWatch">👁 Weiter zuschauen</button>
+      <button class="big" id="btnEndMenu">⏏ Hauptmenü</button>
+    </div>
+  </div>
+
+  <!-- Anleitung -->
+  <div id="helpScreen" class="screen hidden">
+    <div class="panel wide help" id="helpBody"></div>
+  </div>
+
+  <div id="rotate">📱↻<br>Bitte das Gerät ins Querformat drehen</div>
+  <div id="toast"></div>
+</div>
+<script src="lib/peerjs.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="lib/gltf-loader.js"></script>
+<script src="js/data.js"></script>
+<script src="js/maps.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/tex3d.js"></script>
+<script src="js/models3d.js"></script>
+<script src="js/particles3d.js"></script>
+<script src="js/assets3d.js"></script>
+<script src="js/render3d.js"></script>
+<script src="js/fog.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/net.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
