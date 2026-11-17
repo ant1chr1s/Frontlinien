@@ -60,6 +60,9 @@
     </div>
   </div>
 
+  <!-- Zwischensequenz -->
+  <div id="cutscene" class="hidden"><canvas id="csCanvas"></canvas><video id="csVideo" class="hidden" playsinline preload="auto"></video><button id="csSkip">Überspringen ⏭</button></div>
+
   <!-- Kampagne -->
   <div id="campaignScreen" class="screen hidden">
     <div class="panel wide campaign">
@@ -72,6 +75,8 @@
       </div>
       <div class="btnrow"><button class="ghost" data-back>← Zurück</button>
         <label>Schwierigkeit <select id="campDiff"><option value="-1">Leicht</option><option value="0" selected>Normal</option><option value="1">Schwer</option></select></label>
+        <label>Sequenzen <select id="csMode"><option value="live">Animiert mit Stimme</option><option value="video">Video (MP4)</option></select></label>
+        <button class="ghost" id="btnCsReplay">🎬 Ansehen</button>
         <button class="big" id="btnCampStart">▶ Mission starten</button></div>
     </div>
   </div>
@@ -173,6 +178,7 @@
 <script src="js/fog.js"></script>
 <script src="js/missions.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/cutscenes.js"></script>
 <script src="js/net.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>

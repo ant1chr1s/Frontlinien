@@ -118,11 +118,12 @@ const SND = {
   },
 
   // ---------- Effekte ----------
-  fx(kind, x, y) {
-    if (!this.ok || this.vol.sfx <= 0 || this.ctx.state !== 'running') return;
-    const now = this.ctx.currentTime, gap = { shot: 0.07, boom: 0.12, big: 0.5, click: 0.05, blip: 0.3, place: 0.2 }[kind] || 0.1;
-    if (now - (this.sfxT[kind] || 0) < gap) return; this.sfxT[kind] = now;
-    const t = now + 0.01, c = this.ctx;
+  fx(kind, x, y, at) {
+    if (at == null && (!this.ok || this.vol.sfx <= 0 || this.ctx.state !== 'running')) return;
+    const now = at != null ? at : this.ctx.currentTime, gap = { static: 0.5, shot: 0.07, boom: 0.12, big: 0.5, click: 0.05, blip: 0.3, place: 0.2 }[kind] || 0.1;
+    if (at == null) { if (now - (this.sfxT[kind] || 0) < gap) return; this.sfxT[kind] = now; }
+    const t = at != null ? at : now + 0.01, c = this.ctx;
+    if (kind === 'static') { this.noise(t, 1.2, 'highpass', 1200, 0.5, 0.35, this.sfx); return; }
     if (kind === 'shot') this.noise(t, 0.06, 'bandpass', 2500 + Math.random() * 1500, 1.2, 0.12, this.sfx);
     else if (kind === 'boom' || kind === 'big') {
       const big = kind === 'big';
@@ -142,6 +143,19 @@ const SND = {
     const vs = this.voices.length ? this.voices : (window.speechSynthesis ? speechSynthesis.getVoices() : []);
     for (const l of langs) { const c = vs.filter(v => (v.lang || '').replace('_', '-').toLowerCase().startsWith(l)); if (c.length) return c.find(v => /male|daniel|yuri|maxim|arthur|oliver|george|google/i.test(v.name)) || c.find(v => v.localService) || c[0]; }
     return null;
+  },
+  sayText(text, sp) {
+    if (!('speechSynthesis' in window) || this.vol.voice <= 0) return;
+    try { speechSynthesis.cancel(); } catch (e) { }
+    const vs = this.voices.length ? this.voices : speechSynthesis.getVoices();
+    const de = vs.filter(v => (v.lang || '').toLowerCase().replace('_', '-').startsWith('de'));
+    const fem = de.find(v => /anna|petra|helena|katja|hedda|marlene|vicki|female|frau/i.test(v.name)), male = de.find(v => /markus|yannick|stefan|hans|conrad|daniel|male|mann/i.test(v.name));
+    const v = sp.female ? (fem || de[0]) : (male || de.find(x => x !== fem) || de[0]);
+    const u = new SpeechSynthesisUtterance(sp.pitch < 0.3 ? text.replace(/\./g, '…') : text);
+    if (v) u.voice = v; u.lang = v ? v.lang : 'de-DE'; u.pitch = sp.pitch; u.rate = sp.rate; u.volume = Math.min(1, this.vol.voice);
+    u.onstart = () => { this.duck = true; this.applyVol(); };
+    u.onend = u.onerror = () => { this.duck = false; this.applyVol(); };
+    try { speechSynthesis.speak(u); } catch (e) { }
   },
   say(key, prio) {
     if (!('speechSynthesis' in window) || this.vol.voice <= 0) return;
@@ -201,6 +215,9 @@ const TRACKS = {
   A: { bpm: 132, root: 43, prog: [[0, 0], [5, 0], [-3, 1], [7, 0]], kick: 'x...x...x...x...', snare: '....x.......x...', hat: 'x.o.x.o.x.o.x.ox', bass: 'x.ox.ox.x.ox.o5.', leadWave: 'sawtooth', rhythm: 'x..x..x.x...x.x.', form: 'IIAABBAB', seed: 11 },
   D: { bpm: 122, root: 40, prog: [[0, 1], [0, 1], [1, 0], [-2, 0]], kick: 'x..x..x.x..x..x.', snare: '....x.......x.x.', hat: 'x.x.x.x.x.x.x.x.', bass: 'xxoxxxoxxxoxxo5o', bassLen: 0.9, leadWave: 'square', rhythm: 'x.x.x...x..xx...', form: 'IIAABBAB', seed: 27 },
   K: { bpm: 116, root: 41, prog: [[0, 1], [1, 0], [0, 1], [-1, 0]], kick: 'x.....x...x.....', snare: '....x.......x...', hat: '.xx..xx..xx..x.x', bass: 'x..o..x..o..x.o.', bassLen: 2, leadWave: 'triangle', rhythm: 'x.....x.x.......', form: 'IAABAB', seed: 41 },
+  cs_A: { bpm: 92, root: 43, prog: [[0, 0], [-4, 0], [5, 0], [7, 0]], kick: 'x.........x.....', snare: '........x.......', hat: '....x.......x...', bass: 'x.......x.......', bassLen: 6, leadWave: 'sawtooth', rhythm: 'x.......x...x...', form: ' AABB', seed: 101 },
+  cs_D: { bpm: 84, root: 38, prog: [[0, 1], [1, 0], [0, 1], [-2, 0]], kick: 'x.......x.x.....', snare: '........x.......', hat: '..x...x...x...x.', bass: 'x...x...x...x.o.', bassLen: 3, leadWave: 'square', rhythm: 'x...x...x.......', form: ' AABB', seed: 102 },
+  cs_K: { bpm: 76, root: 41, prog: [[0, 1], [1, 0], [-1, 0], [0, 1]], kick: 'x...............', snare: '..........x.....', hat: '.x...x...x...x..', bass: 'x.......o.......', bassLen: 7, leadWave: 'triangle', rhythm: 'x.......x.......', form: '  AAB', seed: 103 },
 };
 function buildTrack(name, D) {
   const rng = mulberry32A(D.seed), mel = new Array(64).fill(null), melLen = new Array(64).fill(0);

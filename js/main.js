@@ -70,10 +70,13 @@ const App = {
     $('#btnLocal').onclick = () => { this.mission = null; this.openSetup('local'); };
     $('#btnCampaign').onclick = () => this.openCampaign();
     $('#btnCampStart').onclick = () => this.startMission(this.campSel);
+    $('#csMode').value = CutscenePlayer.mode();
+    $('#csMode').onchange = (e) => lsSetA('csMode', e.target.value);
+    $('#btnCsReplay').onclick = () => { const M = this.campSel; const cs = cutsceneFor(M.id, 'before') || cutsceneFor(M.id, 'after') || CUTSCENES[M.fac + '_intro']; SND.stop(); CutscenePlayer.play(cs, () => SND.play('menu')); };
     $('#campDiff').value = lsGet('campDiff', '0');
     $('#campDiff').onchange = (e) => lsSet('campDiff', e.target.value);
     $('#btnNextMission').onclick = () => { const M = this.mission; const nx = M && CAMPAIGN[M.fac][M.idx + 1]; this.quit(); if (nx) { this.campFac = nx.fac; this.campSel = nx; this.openCampaign(); } };
-    $('#btnRetry').onclick = () => { const M = this.mission; this.quit(); if (M) this.startMission(CAMPAIGN[M.fac][M.idx]); };
+    $('#btnRetry').onclick = () => { const M = this.mission; this.quit(); if (M) this.startMission(CAMPAIGN[M.fac][M.idx], true); };
     $('#btnHost').onclick = () => { this.mission = null; this.openSetup('host'); };
     $('#btnJoin').onclick = () => this.show('joinScreen');
     $('#btnHelp').onclick = () => this.showHelp('mainMenu');
@@ -168,6 +171,7 @@ const App = {
     $('#btnNextMission').classList.toggle('hidden', !(M && win && CAMPAIGN[M.fac][M.idx + 1]));
     $('#btnRetry').classList.toggle('hidden', !(M && over && !win));
     SND.say(M ? (win ? 'mwin' : 'mlose') : (win ? 'win' : 'lose'), true);
+    if (M && win && cutsceneFor(M.id, 'after')) setTimeout(() => { SND.stop(); CutscenePlayer.play(cutsceneFor(M.id, 'after'), () => SND.play(M.fac)); }, 2500);
     if (M && win) { if (this.campProgress(M.fac) < M.idx + 1) lsSet('camp.' + M.fac, M.idx + 1); }
     $('#endTitle').textContent = M ? (win ? 'MISSION ERFÜLLT' : 'MISSION GESCHEITERT') : win ? 'SIEG!' : (over ? (lost ? 'NIEDERLAGE' : 'SPIEL VORBEI') : 'BESIEGT');
     $('#endTitle').style.color = win ? '#c5e1a5' : '#ff8a80';
@@ -200,8 +204,10 @@ const App = {
       <div class="small-txt" style="margin-top:6px">${M.player.base === 'none' ? 'Du startest ohne Basis – verliere nicht alle Einheiten!' : ''}${M.tech < 3 ? ' Verfügbare Technik ist in dieser Mission begrenzt.' : ''}</div>`;
     this.show('campaignScreen');
   },
-  startMission(M) {
+  startMission(M, noCs) {
     if (!M) return;
+    const cs = !noCs && cutsceneFor(M.id, 'before');
+    if (cs) { SND.stop(); CutscenePlayer.play(cs, () => this.startMission(M, true)); return; }
     const name = ($('#nameIn').value.trim() || 'Kommandant').slice(0, 16);
     const setup = missionToSetup(M, name, +lsGet('campDiff', '0'));
     this.mission = M;
